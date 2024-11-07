@@ -1,0 +1,14 @@
+{
+    "CONNECT_INFO": {
+        "userid": "",
+        "password": "",
+        "brokerid": "7090",
+        "md_address": "tcp://180.169.75.18:61213",
+        "td_address": "tcp://180.169.75.18:61205",
+        "appid": "",
+        "auth_code": ""
+    },
+    "INTERFACE": "ctp",
+    "MD_FUNC": true,
+    "TD_FUNC": true
+}
