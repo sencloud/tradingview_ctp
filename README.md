@@ -58,6 +58,11 @@ python app.py
 python trade_executor.py
 ```
 
+## 功能截图
+
+![image](https://github.com/user-attachments/assets/4e27567c-c98d-4d93-af02-cd4fb4ccf565)
+简单的一个列表页面，用来查看交易记录。
+
 ## API接口
 
 ### 1. 接收交易信号
