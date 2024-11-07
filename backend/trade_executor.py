@@ -70,7 +70,7 @@ class SignalMonitor:
     def load_config(self):
         """加载配置文件"""
         try:
-            config_path = Path(__file__).parent / 'config_ctp.json'
+            config_path = Path(__file__).parent / 'config_sim.json'
             with open(config_path, 'r', encoding='utf-8') as f:
                 self.config = json.load(f)
             logger.info("成功加载配置文件")
@@ -153,13 +153,30 @@ class SignalMonitor:
             # 获取合约信息
             contract_info = self.get_contract_info(symbol)
             
+            # 扩展方向和开平映射
+            if direction == 'BUY':  # 开多
+                order_direction = Direction.LONG
+                order_offset = Offset.OPEN
+            elif direction == 'SELL':  # 开空
+                order_direction = Direction.SHORT
+                order_offset = Offset.OPEN
+            elif direction == 'BUY_CLOSE':  # 平空
+                order_direction = Direction.LONG
+                order_offset = Offset.CLOSETODAY  # 先尝试平今
+            elif direction == 'SELL_CLOSE':  # 平多
+                order_direction = Direction.SHORT
+                order_offset = Offset.CLOSETODAY  # 先尝试平今
+            else:
+                raise ValueError(f"不支持的交易方向: {direction}")
+            
+            # 创建订单请求
             order_req = OrderRequest(
                 symbol=symbol,
                 exchange=contract_info['exchange'],
                 price=price,
                 volume=volume,
-                direction=Direction.LONG if direction == 'BUY' else Direction.SHORT,
-                offset=Offset.OPEN if direction == 'BUY' else Offset.CLOSE,
+                direction=order_direction,
+                offset=order_offset,
                 type=OrderType.LIMIT,
                 order_id=self.generate_order_id()
             )
@@ -179,8 +196,21 @@ class SignalMonitor:
             # 创建下单请求和获取合约信息
             order_req, contract_info = self.create_order_request(symbol, price, volume, direction)
             
-            # 通过send_order发送订单
+            # 发送订单
             order_id = self.app.send_order(order_req)
+            
+            # 如果是平仓订单且失败了，可能需要尝试平昨仓
+            if not order_id and direction in ['BUY_CLOSE', 'SELL_CLOSE']:
+                logger.info(f"平今仓失败，尝试平昨仓...")
+                # 修改为平昨仓
+                order_req.offset = Offset.CLOSEYESTERDAY
+                order_id = self.app.send_order(order_req)
+                
+                # 如果平昨仓也失败，最后尝试普通平仓
+                if not order_id:
+                    logger.info(f"平昨仓失败，尝试普通平仓...")
+                    order_req.offset = Offset.CLOSE
+                    order_id = self.app.send_order(order_req)
             
             if order_id:
                 logger.info(f"订单发送成功: {direction} {symbol} 价格:{price} 数量:{volume} "
@@ -212,7 +242,13 @@ class SignalMonitor:
         try:
             # 从信号中提取交易参数
             symbol = signal['symbol']
-            action = signal['action']
+            action = signal['action'].upper()  # 确保动作是大写
+            
+            # 验证交易动作
+            valid_actions = {'BUY', 'SELL', 'BUY_CLOSE', 'SELL_CLOSE'}
+            if action not in valid_actions:
+                raise ValueError(f"无效的交易动作: {action}，支持的动作: {valid_actions}")
+            
             price = float(signal['price'])
             volume = int(signal.get('volume', 1))
             signal_id = signal['id']
