@@ -97,6 +97,13 @@ python trade_executor.py
 2. 建议在实盘交易前进行充分测试
 3. 请确保网络环境稳定，以保证交易信号的及时接收和执行
 
+## 免责声明
+本项目开源仅作爱好，请谨慎使用，本人不对代码产生的任何使用后果负责。
+
+## 其他
+如果你喜欢我的项目，可以给我买杯咖啡：
+<img src="https://github.com/user-attachments/assets/e75ef971-ff56-41e5-88b9-317595d22f81" alt="image" width="300" height="300">
+
 ## 开发计划
 
 - [ ] 添加更多交易策略支持
