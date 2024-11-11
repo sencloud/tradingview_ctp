@@ -107,6 +107,47 @@ def get_signals():
         logger.error(f"Error fetching signals: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/logs', methods=['GET'])
+def get_logs():
+    try:
+        # 读取最后100行日志
+        with open('trading.log', 'r') as f:
+            logs = f.readlines()[-100:]
+        return jsonify({'logs': logs})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/account', methods=['GET'])
+def get_account():
+    try:
+        conn = sqlite3.connect('signals.db')
+        c = conn.cursor()
+        
+        # 获取最新的账户数据
+        c.execute('''
+            SELECT balance, equity, available, position_profit, timestamp
+            FROM account_info
+            ORDER BY timestamp DESC
+            LIMIT 1
+        ''')
+        row = c.fetchone()
+        
+        if row:
+            account_data = {
+                'balance': row[0],
+                'equity': row[1],
+                'available': row[2],
+                'profit': row[3],
+                'timestamp': row[4]
+            }
+            return jsonify({'success': True, 'data': account_data})
+        else:
+            return jsonify({'success': False, 'error': 'No account data available'}), 404
+            
+    except Exception as e:
+        logger.error(f"Error fetching account data: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     init_db()
     app.run(host="0.0.0.0", port=80, debug=True)
