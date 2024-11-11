@@ -422,12 +422,27 @@ class SignalMonitor:
             elif direction == 'SELL':  # 开空
                 order_direction = Direction.SHORT
                 order_offset = Offset.OPEN
-            elif direction == 'BUY_CLOSE':  # 平空
-                order_direction = Direction.SHORT
-                order_offset = Offset.CLOSETODAY  # 先尝试平今
-            elif direction == 'SELL_CLOSE':  # 平多
-                order_direction = Direction.LONG
-                order_offset = Offset.CLOSETODAY  # 先尝试平今
+            elif direction in ['BUY_CLOSE', 'SELL_CLOSE']:  # 平仓
+                order_direction = Direction.SHORT if direction == 'SELL_CLOSE' else Direction.LONG
+                # 获取持仓信息来决定平仓方式
+                positions = self.app.center.positions
+                for pos in positions:
+                    if pos.symbol == symbol and (
+                        (direction == 'SELL_CLOSE' and pos.direction == Direction.LONG) or
+                        (direction == 'BUY_CLOSE' and pos.direction == Direction.SHORT)
+                    ):
+                        # 如果有昨仓，优先平昨
+                        if pos.yd_volume > 0:
+                            order_offset = Offset.CLOSEYESTERDAY
+                            logger.info(f"使用平昨仓: {symbol} 昨仓数量:{pos.yd_volume}")
+                        else:
+                            order_offset = Offset.CLOSETODAY
+                            logger.info(f"使用平今仓: {symbol} 今仓数量:{pos.volume}")
+                        break
+                else:
+                    # 如果没找到对应持仓，使用普通平仓
+                    order_offset = Offset.CLOSE
+                    logger.info(f"使用普通平仓: {symbol}")
             else:
                 raise ValueError(f"不支持的交易方向: {direction}")
             
@@ -479,24 +494,25 @@ class SignalMonitor:
             
             # 创建下单请求和获取合约信息
             order_req, contract_info = self.create_order_request(symbol, use_price, volume, direction)
+            success = False
             
-            # 发送订单
-            order_id = self.app.send_order(order_req)
+            # 发送订单并获取结果
+            order_result = self.app.send_order(order_req)
+            logger.info(f"订单发送结果: {order_result}")
             
-            # 如果是平仓订单且失败了，可能需要尝试平昨仓
-            if not order_id and direction in ['BUY_CLOSE', 'SELL_CLOSE']:
-                logger.info(f"平今仓失败，尝试平昨仓...")
-                # 修改为平昨仓
-                order_req.offset = Offset.CLOSEYESTERDAY
-                order_id = self.app.send_order(order_req)
-                
-                # 如果平昨仓也失败，最后尝试普通平仓
-                if not order_id:
-                    logger.info(f"平昨仓失败，尝试普通平仓...")
-                    order_req.offset = Offset.CLOSE
-                    order_id = self.app.send_order(order_req)
+            # 判断订单是否成功
+            if not isinstance(order_result, dict):
+                success = True
+                order_id = order_result
+            elif not order_result.get('ErrorID'):
+                success = True
+                order_id = order_result
+            else:
+                success = False
+                error_msg = order_result.get('ErrorMsg', '未知错误')
+                logger.error(f"订单发送失败: {error_msg}")
             
-            if order_id:
+            if success:
                 logger.info(f"订单发送成功: {direction} {symbol} 价格:{use_price} 数量:{volume} "
                           f"订单ID:{order_id} 合约乘数:{contract_info['size']}")
                 
@@ -508,12 +524,18 @@ class SignalMonitor:
                         WHERE id = ?
                     ''', (order_id, signal_id))
                 
-                # 更新持仓信息
+                # 只有在订单真正成功时才更新持仓信息
                 self.position_manager.update_position(symbol, direction, volume)
-                
                 return True
             else:
-                logger.error("订单发送失败")
+                # 更新数据库中的订单状态为失败
+                with self.db.get_cursor() as c:
+                    c.execute('''
+                        UPDATE trading_signals 
+                        SET status = 'failed',
+                            process_time = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    ''', (signal_id,))
                 return False
                 
         except Exception as e:
