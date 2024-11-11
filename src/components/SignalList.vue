@@ -10,7 +10,7 @@ const loading = ref(false);
 const fetchSignals = async () => {
   loading.value = true;
   try {
-    const response = await axios.get('http://127.0.0.1:5000/api/signals');
+    const response = await axios.get('http://127.0.0.1/api/signals');
     signals.value = response.data.data;
   } catch (error) {
     ElMessage.error('获取信号数据失败');

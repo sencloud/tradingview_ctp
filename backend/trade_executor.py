@@ -51,6 +51,9 @@ class SignalMonitor:
             'AL': {'size': 5, 'exchange': Exchange.SHFE},      # 铝
             'ZN': {'size': 5, 'exchange': Exchange.SHFE},      # 锌
             'RB': {'size': 10, 'exchange': Exchange.SHFE},     # 螺纹钢
+            'BU': {'size': 10, 'exchange': Exchange.SHFE},     # 沥青
+            'SP': {'size': 20, 'exchange': Exchange.SHFE},     # 纸浆
+            'HC': {'size': 10, 'exchange': Exchange.SHFE},     # 热卷
             
             # 大商所
             'M': {'size': 10, 'exchange': Exchange.DCE},       # 豆粕
@@ -161,10 +164,10 @@ class SignalMonitor:
                 order_direction = Direction.SHORT
                 order_offset = Offset.OPEN
             elif direction == 'BUY_CLOSE':  # 平空
-                order_direction = Direction.LONG
+                order_direction = Direction.SHORT
                 order_offset = Offset.CLOSETODAY  # 先尝试平今
             elif direction == 'SELL_CLOSE':  # 平多
-                order_direction = Direction.SHORT
+                order_direction = Direction.LONG
                 order_offset = Offset.CLOSETODAY  # 先尝试平今
             else:
                 raise ValueError(f"不支持的交易方向: {direction}")
@@ -180,6 +183,7 @@ class SignalMonitor:
                 type=OrderType.LIMIT,
                 order_id=self.generate_order_id()
             )
+            logger.info(f"创建订单请求: {order_req}")
             return order_req, contract_info
             
         except Exception as e:
