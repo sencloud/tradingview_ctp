@@ -21,7 +21,7 @@ def get_db_connection():
 def get_trading_signals():
     conn = get_db_connection()
     query = '''
-    SELECT id, symbol, action, price, timestamp, volume, strategy, processed, status 
+    SELECT id, symbol, action, price, volume, timestamp, status, processed, process_time
     FROM trading_signals 
     ORDER BY timestamp DESC
     '''
@@ -105,8 +105,14 @@ st.dataframe(
     signals_df,
     column_config={
         "timestamp": st.column_config.DatetimeColumn(
-            "时间",
+            "信号时间",
             format="YYYY-MM-DD HH:mm:ss",
+            timezone="Asia/Shanghai",  # 加8小时，使用北京时间
+        ),
+        "process_time": st.column_config.DatetimeColumn(
+            "处理时间",
+            format="YYYY-MM-DD HH:mm:ss",
+            timezone="Asia/Shanghai",  # 加8小时，使用北京时间
         ),
         "symbol": "交易品种",
         "action": "交易动作",
@@ -122,20 +128,17 @@ st.dataframe(
     hide_index=True
 )
 
-# 按策略统计
-st.subheader("策略表现")
-strategy_stats = signals_df.groupby('strategy').agg({
-    'id': 'count',
-    'processed': 'sum'
-}).reset_index()
-strategy_stats.columns = ['策略', '总信号数', '已处理信号数']
-st.bar_chart(strategy_stats.set_index('策略'))
-
 # 时间序列图
 st.subheader("信号时间线")
 if not signals_df.empty:
-    # 按小时重采样数据
-    timeline_df = signals_df.set_index('timestamp').resample('h').size().reset_index()
+    # 按30分钟重采样数据
+    timeline_df = (signals_df
+                  .set_index('timestamp')
+                  .tz_localize('UTC')
+                  .tz_convert('Asia/Shanghai')
+                  .resample('30T')  # 改为30分钟('30T')而不是1小时('h')
+                  .size()
+                  .reset_index())
     timeline_df.columns = ['timestamp', 'count']
     
     # 创建时间线图
@@ -153,7 +156,7 @@ if not signals_df.empty:
     
     # 更新布局
     fig.update_layout(
-        title='信号随时间变化',
+        title='信号随时间变化 (北京时间)',
         xaxis_title='时间',
         yaxis_title='信号数量',
         template='plotly_white',

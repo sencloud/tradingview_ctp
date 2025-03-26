@@ -57,13 +57,19 @@ class MarketDataApi(CtpbeeApi):
 
             with DatabaseConnection().get_cursor() as c:
                 c.execute('''
-                    INSERT INTO account_info (balance, equity, available, position_profit)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO account_info (id, balance, equity, available, position_profit)
+                    SELECT 1, ?, ?, ?, ?
+                    WHERE NOT EXISTS (SELECT 1 FROM account_info WHERE id = 1)
+                    UNION ALL
+                    UPDATE account_info 
+                    SET balance = ?,
+                        equity = ?,
+                        available = ?,
+                        position_profit = ?
+                    WHERE id = 1
                 ''', (
-                    account.balance,                    # 账户余额
-                    account.balance + total_float_pnl,  # 净值 = 余额 + 浮动盈亏
-                    account.available,                  # 可用资金
-                    total_float_pnl                     # 持仓盈亏（使用浮动盈亏）
+                    account.balance, account.balance + total_float_pnl, account.available, total_float_pnl,  # INSERT 的参数
+                    account.balance, account.balance + total_float_pnl, account.available, total_float_pnl   # UPDATE 的参数
                 ))
         except Exception as e:
             logger.error(f"更新账户数据失败: {str(e)}")
