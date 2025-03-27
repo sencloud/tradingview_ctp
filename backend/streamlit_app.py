@@ -21,7 +21,7 @@ def get_db_connection():
 def get_trading_signals():
     conn = get_db_connection()
     query = '''
-    SELECT id, symbol, action, price, volume, timestamp, status, processed, process_time
+    SELECT id, symbol, action, price, volume, timestamp, status, processed, process_time, strategy
     FROM trading_signals 
     ORDER BY timestamp DESC
     '''
@@ -101,6 +101,20 @@ st.plotly_chart(fig, use_container_width=True)
 
 # 最近交易信号表格
 st.subheader("最近交易信号")
+
+# 添加 action 显示转换逻辑
+def format_action(row):
+    if row['strategy'] == 'flat':
+        return '开多仓' if row['action'] == 'buy' else '开空仓'
+    elif row['strategy'] == 'short':
+        return '平多仓' if row['action'] == 'sell' else '平空仓'
+    elif row['strategy'] == 'long':
+        return '平多仓' if row['action'] == 'sell' else '平空仓'
+    else:
+        return row['action']
+
+signals_df['action'] = signals_df.apply(format_action, axis=1)
+
 st.dataframe(
     signals_df,
     column_config={

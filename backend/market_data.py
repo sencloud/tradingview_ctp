@@ -56,21 +56,25 @@ class MarketDataApi(CtpbeeApi):
                 total_float_pnl += pos.float_pnl if pos.float_pnl is not None else 0
 
             with DatabaseConnection().get_cursor() as c:
+                # 先尝试更新
                 c.execute('''
-                    INSERT INTO account_info (id, balance, equity, available, position_profit)
-                    SELECT 1, ?, ?, ?, ?
-                    WHERE NOT EXISTS (SELECT 1 FROM account_info WHERE id = 1)
-                    UNION ALL
                     UPDATE account_info 
                     SET balance = ?,
                         equity = ?,
                         available = ?,
                         position_profit = ?
                     WHERE id = 1
-                ''', (
-                    account.balance, account.balance + total_float_pnl, account.available, total_float_pnl,  # INSERT 的参数
-                    account.balance, account.balance + total_float_pnl, account.available, total_float_pnl   # UPDATE 的参数
-                ))
+                ''', (account.balance, account.balance + total_float_pnl, 
+                     account.available, total_float_pnl))
+                
+                # 如果没有更新任何行(即记录不存在)，则插入
+                if c.rowcount == 0:
+                    c.execute('''
+                        INSERT INTO account_info (id, balance, equity, available, position_profit)
+                        VALUES (1, ?, ?, ?, ?)
+                    ''', (account.balance, account.balance + total_float_pnl, 
+                         account.available, total_float_pnl))
+                     
         except Exception as e:
             logger.error(f"更新账户数据失败: {str(e)}")
             logger.exception("详细错误信息:")
@@ -80,8 +84,8 @@ class MarketDataApi(CtpbeeApi):
         try:
             # 映射订单状态到我们的状态系统
             status_map = {
-                "SUBMITTING": "pending",      # 提交中
-                "NOTTRADED": "pending",       # 未成交
+                "SUBMITTING": "submitted",      # 提交中
+                "NOTTRADED": "submitted",       # 未成交
                 "PARTTRADED": "partial",      # 部分成交
                 "ALLTRADED": "filled",        # 全部成交
                 "CANCELLED": "cancelled",     # 已撤销
@@ -93,7 +97,7 @@ class MarketDataApi(CtpbeeApi):
             order_status = str(order.status).replace('Status.', '')
             current_status = status_map.get(order_status, "error")
             
-            logger.info(f"订单状态: {order.status}")
+            # logger.info(f"订单状态: {order.status}")
             
             # 更新数据库中的订单状态
             with self.db.get_cursor() as c:
@@ -114,16 +118,16 @@ class MarketDataApi(CtpbeeApi):
                 ''', (current_status, "ctp."+order.order_id))
 
             # 记录状态变化
-            logger.info(f"订单状态更新: ID={order.order_id} "
-                       f"状态={current_status} "
-                       f"总量={order.volume} "
-                       f"已成交={order.traded}")
+            # logger.info(f"订单状态更新: ID={order.order_id} "
+            #            f"状态={current_status} "
+            #            f"总量={order.volume} "
+            #            f"已成交={order.traded}")
 
             # 如果订单完成（成交、拒绝、撤销、错误），记录详细信息
-            if current_status in ['filled', 'rejected', 'cancelled', 'failed']:
-                logger.info(f"订单完成: ID=ctp.{order.order_id} "
-                          f"最终状态={current_status} "
-                          f"成交量={order.traded}/{order.volume}")
+            # if current_status in ['filled', 'rejected', 'cancelled', 'failed']:
+            #     logger.info(f"订单完成: ID=ctp.{order.order_id} "
+            #               f"最终状态={current_status} "
+            #               f"成交量={order.traded}/{order.volume}")
 
         except Exception as e:
             logger.error(f"处理订单状态更新失败: {str(e)}")

@@ -26,6 +26,7 @@ class SignalMonitor:
         self.load_config()
         self.db = DatabaseConnection()
         self.position_manager = PositionManager(self.app)
+        self.max_position = 2  # 添加最大持仓限制
         
     def load_contract_specs(self):
         """加载合约规格"""
@@ -213,6 +214,30 @@ class SignalMonitor:
                      signal_id: int, force_offset: Optional[Offset] = None) -> bool:
         """执行下单操作"""
         try:
+            # 检查当前持仓
+            current_position = 0
+            for pos in self.app.center.positions:
+                if pos.symbol == symbol:
+                    if (direction in ['BUY', 'SELL'] and  # 开仓操作
+                        logger.info(f"当前持仓: {pos.symbol} {pos.direction} {pos.volume}")
+                        ((direction == 'BUY' and pos.direction == Direction.LONG) or
+                         (direction == 'SELL' and pos.direction == Direction.SHORT))):
+                        current_position += pos.volume
+            
+            # 如果是开仓操作且会超过最大持仓限制，则拒绝订单
+            if direction in ['BUY', 'SELL'] and current_position + volume > self.max_position:
+                logger.warning(f"拒绝订单: {symbol} {direction} - 超过最大持仓限制 "
+                             f"(当前:{current_position}, 最大:{self.max_position})")
+                with self.db.get_cursor() as c:
+                    c.execute('''
+                        UPDATE trading_signals 
+                        SET status = 'rejected',
+                            process_time = CURRENT_TIMESTAMP,
+                            message = '超过最大持仓限制'
+                        WHERE id = ?
+                    ''', (signal_id,))
+                return False
+            
             use_price = price
             
             # 创建下单请求和获取合约信息，传入强制开平标志
@@ -222,7 +247,7 @@ class SignalMonitor:
             
             # 发送订单并获取结果
             order_result = self.app.send_order(order_req)
-            logger.info(f"订单发送结果: {order_result}")
+            # logger.info(f"订单发送结果: {order_result}")
             
             # 判断订单是否成功
             if not isinstance(order_result, dict):
@@ -279,16 +304,12 @@ class SignalMonitor:
             volume = int(signal.get('volume', 1))
 
             if strategy.upper() == 'SHORT' and action == 'BUY':
-                # 先平空，后开多
+                # 只平空
                 close_action = 'BUY_CLOSE'
-                open_action = 'BUY'
-                
-                # 1. 先执行平仓操作
-                close_success = True  # 假设平仓成功，即使没有需要平的仓位
+                close_success = True
                 positions = self.app.center.positions
                 for pos in positions:
                     if pos.symbol == symbol and pos.direction == Direction.SHORT:
-                        # 分别处理昨仓和今仓
                         if pos.yd_volume > 0:
                             logger.info(f"平昨仓: {symbol} {close_action} 数量:{pos.yd_volume}")
                             close_success &= self.execute_order(
@@ -312,17 +333,7 @@ class SignalMonitor:
                                 force_offset=Offset.CLOSETODAY
                             )
 
-                # 2. 执行开仓操作（无论平仓是否成功）
-                open_success = self.execute_order(
-                    symbol=symbol,
-                    price=price,
-                    volume=volume,
-                    direction=open_action,
-                    signal_id=signal_id
-                )
-
-                # 更新信号状态
-                status = 'processed' if open_success else 'failed'
+                status = 'processed' if close_success else 'failed'
                 with self.db.get_cursor() as c:
                     c.execute('''
                         UPDATE trading_signals
@@ -331,21 +342,15 @@ class SignalMonitor:
                             status = ?
                         WHERE id = ?
                     ''', (status, signal_id,))
-
-                logger.info(f"信号处理完成: ID={signal_id} 平仓结果={close_success} 开仓结果={open_success}")
-                return open_success
+                # return close_success
 
             elif strategy.upper() == 'LONG' and action == 'SELL':
-                # 先平多，后开空
+                # 只平多
                 close_action = 'SELL_CLOSE'
-                open_action = 'SELL'
-                
-                # 1. 先执行平仓操作
-                close_success = True  # 假设平仓成功，即使没有需要平的仓位
+                close_success = True
                 positions = self.app.center.positions
                 for pos in positions:
                     if pos.symbol == symbol and pos.direction == Direction.LONG:
-                        # 分别处理昨仓和今仓
                         if pos.yd_volume > 0:
                             logger.info(f"平昨仓: {symbol} {close_action} 数量:{pos.yd_volume}")
                             close_success &= self.execute_order(
@@ -369,17 +374,7 @@ class SignalMonitor:
                                 force_offset=Offset.CLOSETODAY
                             )
 
-                # 2. 执行开仓操作（无论平仓是否成功）
-                open_success = self.execute_order(
-                    symbol=symbol,
-                    price=price,
-                    volume=volume,
-                    direction=open_action,
-                    signal_id=signal_id
-                )
-
-                # 更新信号状态
-                status = 'processed' if open_success else 'failed'
+                status = 'processed' if close_success else 'failed'
                 with self.db.get_cursor() as c:
                     c.execute('''
                         UPDATE trading_signals
@@ -388,17 +383,16 @@ class SignalMonitor:
                             status = ?
                         WHERE id = ?
                     ''', (status, signal_id,))
+                # return close_success
 
-                logger.info(f"信号处理完成: ID={signal_id} 平仓结果={close_success} 开仓结果={open_success}")
-                return open_success
+            # elif strategy.upper() == 'FLAT':
+            # 开仓操作
+            if action not in {'BUY', 'SELL'}:
+                raise ValueError(f"无效的交易动作: {action}")
+            return self.execute_order(symbol, price, volume, action, signal_id)
 
-            else:
-                # 普通开仓操作
-                valid_actions = {'BUY', 'SELL'}
-                if action not in valid_actions:
-                    raise ValueError(f"无效的交易动作: {action}")
-                return self.execute_order(symbol, float(signal['price']), 
-                                       int(signal.get('volume', 1)), action, signal['id'])
+            # else:
+            #     raise ValueError(f"无效的策略和动作组合: strategy={strategy}, action={action}")
 
         except Exception as e:
             logger.error(f"处理信号失败: {str(e)}")
@@ -409,17 +403,18 @@ class SignalMonitor:
         logger.info("开始监控交易信号")
         last_subscribe_time = 0
         subscribe_interval = 60  # 订阅检查间隔（秒）
+        processing_signals = set()  # 跟踪正在处理的信号
         
         while True:
             try:
                 current_time = time.time()
-                # 每隔一定时间检查一次订阅
                 if current_time - last_subscribe_time >= subscribe_interval:
                     self.subscribe_contracts()
                     last_subscribe_time = current_time
 
                 # 处理交易信号
                 with self.db.get_cursor() as c:
+                    # 只获取未处理且未提交的信号
                     c.execute('''
                         SELECT id, symbol, action, price, timestamp, 
                                volume, strategy, processed, status
