@@ -117,7 +117,7 @@ class SignalMonitor:
             
             # 等待行情接口初始化
             wait_count = 0
-            while not self.market_api.inited and wait_count < 10:
+            while not self.market_api.inited and wait_count < 30:
                 time.sleep(10)
                 wait_count += 1
                 logger.info("等待行情接口初始化...")
@@ -215,28 +215,28 @@ class SignalMonitor:
         """执行下单操作"""
         try:
             # 检查当前持仓
-            current_position = 0
-            for pos in self.app.center.positions:
-                if pos.symbol == symbol:
-                    if (direction in ['BUY', 'SELL'] and  # 开仓操作
-                        logger.info(f"当前持仓: {pos.symbol} {pos.direction} {pos.volume}")
-                        ((direction == 'BUY' and pos.direction == Direction.LONG) or
-                         (direction == 'SELL' and pos.direction == Direction.SHORT))):
-                        current_position += pos.volume
+            # current_position = 0
+            # for pos in self.app.center.positions:
+            #     if pos.symbol == symbol:
+            #         if (direction in ['BUY', 'SELL'] and  # 开仓操作
+            #             logger.info(f"当前持仓: {pos.symbol} {pos.direction} {pos.volume}")
+            #             ((direction == 'BUY' and pos.direction == Direction.LONG) or
+            #              (direction == 'SELL' and pos.direction == Direction.SHORT))):
+            #             current_position += pos.volume
             
-            # 如果是开仓操作且会超过最大持仓限制，则拒绝订单
-            if direction in ['BUY', 'SELL'] and current_position + volume > self.max_position:
-                logger.warning(f"拒绝订单: {symbol} {direction} - 超过最大持仓限制 "
-                             f"(当前:{current_position}, 最大:{self.max_position})")
-                with self.db.get_cursor() as c:
-                    c.execute('''
-                        UPDATE trading_signals 
-                        SET status = 'rejected',
-                            process_time = CURRENT_TIMESTAMP,
-                            message = '超过最大持仓限制'
-                        WHERE id = ?
-                    ''', (signal_id,))
-                return False
+            # # 如果是开仓操作且会超过最大持仓限制，则拒绝订单
+            # if direction in ['BUY', 'SELL'] and current_position + volume > self.max_position:
+            #     logger.warning(f"拒绝订单: {symbol} {direction} - 超过最大持仓限制 "
+            #                  f"(当前:{current_position}, 最大:{self.max_position})")
+            #     with self.db.get_cursor() as c:
+            #         c.execute('''
+            #             UPDATE trading_signals 
+            #             SET status = 'rejected',
+            #                 process_time = CURRENT_TIMESTAMP,
+            #                 message = '超过最大持仓限制'
+            #             WHERE id = ?
+            #         ''', (signal_id,))
+            #     return False
             
             use_price = price
             
@@ -289,6 +289,8 @@ class SignalMonitor:
                 
         except Exception as e:
             logger.error(f"下单执行异常: {str(e)}")
+            import traceback
+            traceback.print_exc()
             logger.error(f"订单信息: symbol={symbol}, price={price}, volume={volume}, "
                       f"direction={direction}")
             return False
@@ -342,7 +344,6 @@ class SignalMonitor:
                             status = ?
                         WHERE id = ?
                     ''', (status, signal_id,))
-                # return close_success
 
             elif strategy.upper() == 'LONG' and action == 'SELL':
                 # 只平多
@@ -383,16 +384,25 @@ class SignalMonitor:
                             status = ?
                         WHERE id = ?
                     ''', (status, signal_id,))
-                # return close_success
 
-            # elif strategy.upper() == 'FLAT':
+
             # 开仓操作
             if action not in {'BUY', 'SELL'}:
                 raise ValueError(f"无效的交易动作: {action}")
+            
+            # 检查当前持仓
+            current_position = 0
+            for pos in self.app.center.positions:
+                if pos.symbol == symbol:
+                    if ((action == 'BUY' and pos.direction == Direction.LONG) or
+                        (action == 'SELL' and pos.direction == Direction.SHORT)):
+                        current_position += pos.volume
+                        
+            if current_position > 0:
+                logger.warning(f"当前已有持仓，跳过开仓: {symbol} {action}")
+                return False
+            
             return self.execute_order(symbol, price, volume, action, signal_id)
-
-            # else:
-            #     raise ValueError(f"无效的策略和动作组合: strategy={strategy}, action={action}")
 
         except Exception as e:
             logger.error(f"处理信号失败: {str(e)}")
