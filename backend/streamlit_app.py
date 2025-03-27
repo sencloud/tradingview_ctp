@@ -104,12 +104,10 @@ st.subheader("最近交易信号")
 
 # 添加 action 显示转换逻辑
 def format_action(row):
-    if row['strategy'] == 'flat':
-        return '开多仓' if row['action'] == 'buy' else '开空仓'
-    elif row['strategy'] == 'short':
-        return '平多仓' if row['action'] == 'sell' else '平空仓'
+    if row['strategy'] == 'short':
+        return '开多仓'
     elif row['strategy'] == 'long':
-        return '平多仓' if row['action'] == 'sell' else '平空仓'
+        return '开空仓'
     else:
         return row['action']
 
