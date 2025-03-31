@@ -53,8 +53,8 @@ streamlit run streamlit_app.py
 
 ## 功能截图
 
-![image](https://github.com/user-attachments/assets/4e27567c-c98d-4d93-af02-cd4fb4ccf565)
-交易信号列表页面
+![image](https://github.com/user-attachments/assets/4885cd52-b9c6-4b2f-8d63-ecb88b8fa1f5)
+
 
 ## API接口
 
