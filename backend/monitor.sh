@@ -1,87 +1,112 @@
 #!/bin/bash
 
-# 设置日志文件路径
-LOG_FILE="/root/tradingview_ctp/monitor.log"
+# 全局配置区
+LOG_FILE="/root/tradingview_ctp/monitor.log"        # 监控日志
+TRADING_LOG="/root/tradingview_ctp/trading.log"     # 交易日志
 EXECUTOR_PATH="/root/tradingview_ctp/trade_executor.py"
-
-# 设置 conda 环境
-CONDA_PATH="/root/miniconda3"  # 修改为你的 conda 安装路径
-CONDA_ENV="py311"             # 你的 conda 环境名称
+CONDA_PATH="/root/miniconda3"
+CONDA_ENV="py311"
+ERROR_MSG="程序启动失败: 行情接口初化超时"          # 关键错误信息
+MAX_RETRY=3                                        # 最大重试次数
+RETRY_WAIT=5                                       # 初始重试间隔(秒)
 
 # 初始化 conda
 source "${CONDA_PATH}/etc/profile.d/conda.sh"
 
-# 记录日志的函数
+# 日志记录函数（优化自网页8）
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+    local level=$1
+    local message=$2
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[${timestamp}] [${level}] ${message}" | tee -a "$LOG_FILE"
 }
 
-# 重启服务的函数
+# 进程清理函数（优化自网页5、网页9）
+kill_process() {
+    local process_name=$(basename $EXECUTOR_PATH)
+    
+    # 终止常规进程
+    pkill -f "$process_name"
+    sleep 2
+    
+    # 深度清理残留
+    if pgrep -f "$process_name" >/dev/null; then
+        log "WARN" "发现僵尸进程，强制清理..."
+        pkill -9 -f "$process_name"
+        sleep 1
+    fi
+}
+
+# 重启服务函数（含指数退避重试机制）
 restart_service() {
-    log "准备重启 trade_executor 服务..."
+    local retry_count=0
+    local current_wait=$RETRY_WAIT
     
-    # 查找并终止现有的进程
-    OLD_PID=$(ps -ef | grep "python trade_executor.py" | grep -v grep | awk '{print $2}')
-    if [ ! -z "$OLD_PID" ]; then
-        log "终止旧进程 (PID: $OLD_PID)"
-        kill $OLD_PID
-        sleep 5
+    while [ $retry_count -lt $MAX_RETRY ]; do
+        ((retry_count++))
+        log "INFO" "开始第 ${retry_count} 次重启尝试"
         
-        # 检查进程是否仍在运行，如果是则强制终止
-        if ps -p $OLD_PID > /dev/null; then
-            log "进程未响应，强制终止"
-            kill -9 $OLD_PID
-            sleep 2
+        # 清理旧进程
+        kill_process
+        
+        # 日志轮转（参考网页5）
+        if [ $(du -k "$TRADING_LOG" | cut -f1) -gt 10240 ]; then
+            mv "$TRADING_LOG" "${TRADING_LOG}.$(date +%Y%m%d%H%M)"
+            touch "$TRADING_LOG"
         fi
-    else
-        log "未发现运行中的进程"
-    fi
+        
+        # 启动新进程
+        cd $(dirname $EXECUTOR_PATH)
+        conda activate $CONDA_ENV
+        nohup python $EXECUTOR_PATH > trade_executor.log 2>&1 &
+        
+        # 验证启动
+        sleep 10
+        NEW_PID=$(pgrep -f "$EXECUTOR_PATH")
+        if [ -n "$NEW_PID" ]; then
+            log "INFO" "启动成功 (PID: $NEW_PID)"
+            return 0
+        else
+            log "ERROR" "第 ${retry_count} 次启动失败"
+            current_wait=$((current_wait * 2))
+            sleep $current_wait
+        fi
+    done
     
-    # 切换到正确的目录
-    cd $(dirname $EXECUTOR_PATH)
-    
-    # 激活 conda 环境并启动新进程
-    log "激活 conda 环境 ${CONDA_ENV}..."
-    conda activate ${CONDA_ENV}
-    
-    log "启动新进程..."
-    nohup python trade_executor.py > trade_executor.log 2>&1 &
-    
-    # 检查新进程是否成功启动
-    NEW_PID=$(ps -ef | grep "python trade_executor.py" | grep -v grep | awk '{print $2}')
-    if [ ! -z "$NEW_PID" ]; then
-        log "服务成功重启 (新 PID: $NEW_PID)"
-    else
-        log "服务启动失败"
-    fi
+    log "CRITICAL" "已达最大重试次数($MAX_RETRY)，停止尝试"
+    exit 1
 }
 
-# 检查服务是否在运行的函数
+# 服务检查函数（含错误日志监控）
 check_service() {
-    PID=$(ps -ef | grep "python trade_executor.py" | grep -v grep | awk '{print $2}')
-    if [ -z "$PID" ]; then
-        log "服务未运行，正在重启..."
+    # 进程状态检查
+    if ! pgrep -f "$EXECUTOR_PATH" >/dev/null; then
+        log "WARN" "服务进程不存在，触发重启"
+        restart_service
+        return
+    fi
+    
+    # 错误日志监控（网页1、网页7方案）
+    if grep -q "$ERROR_MSG" "$TRADING_LOG"; then
+        log "ERROR" "检测到行情接口初始化超时，触发重启流程"
+        > "$TRADING_LOG"  # 清空已处理错误
         restart_service
     fi
 }
 
-# 主循环
+# 主循环（带计划任务功能）
 while true; do
-    # 获取当前时间
-    CURRENT_HOUR=$(date +%H)
-    CURRENT_MIN=$(date +%M)
-    
-    # 在 20:50 重启服务
-    if [ "$CURRENT_HOUR" = "20" ] && [ "$CURRENT_MIN" = "50" ]; then
-        log "达到计划重启时间"
+    # 计划重启时间
+    if [ $(date +%H:%M) = "20:50" ]; then
+        log "INFO" "触发计划重启"
         restart_service
-        sleep 60  # 等待1分钟，避免在同一分钟内多次重启
+        sleep 60
+        continue
     fi
     
-    # 检查服务是否在运行
+    # 常规检查
     check_service
     
-    # 每分钟检查一次
+    # 休眠周期
     sleep 60
-done 
+done
