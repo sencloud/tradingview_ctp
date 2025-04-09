@@ -26,30 +26,63 @@ if 'order_records' not in st.session_state:
 # 合约规格信息
 CONTRACT_SPECS = {    
     # 上期所
-    'FU': {'size': 10, 'exchange': Exchange.SHFE}, 
-    'AG': {'size': 15, 'exchange': Exchange.SHFE},     # 白银
-    'RU': {'size': 50, 'exchange': Exchange.SHFE},      # 橡胶
-    'AL': {'size': 5, 'exchange': Exchange.SHFE},      # 铝
-    'ZN': {'size': 5, 'exchange': Exchange.SHFE},      # 锌
-    'AO': {'size': 20, 'exchange': Exchange.SHFE},      # 氧化铝
-    'RB': {'size': 10, 'exchange': Exchange.SHFE},     # 螺纹钢
-    'BU': {'size': 10, 'exchange': Exchange.SHFE},     # 沥青
-    'SP': {'size': 20, 'exchange': Exchange.SHFE},     # 纸浆
-    'HC': {'size': 10, 'exchange': Exchange.SHFE},     # 热卷
+    'FU': {'size': 10, 'exchange': Exchange.SHFE, 'name': '燃油'}, 
+    'AG': {'size': 15, 'exchange': Exchange.SHFE, 'name': '白银'},
+    'RU': {'size': 50, 'exchange': Exchange.SHFE, 'name': '橡胶'},
+    'AL': {'size': 5, 'exchange': Exchange.SHFE, 'name': '铝'},
+    'ZN': {'size': 5, 'exchange': Exchange.SHFE, 'name': '锌'},
+    'AO': {'size': 20, 'exchange': Exchange.SHFE, 'name': '氧化铝'},
+    'RB': {'size': 10, 'exchange': Exchange.SHFE, 'name': '螺纹钢'},
+    'BU': {'size': 10, 'exchange': Exchange.SHFE, 'name': '沥青'},
+    'SP': {'size': 20, 'exchange': Exchange.SHFE, 'name': '纸浆'},
+    'HC': {'size': 10, 'exchange': Exchange.SHFE, 'name': '热卷'},
+    'NI': {'size': 1, 'exchange': Exchange.SHFE, 'name': '镍'},
     
     # 大商所
-    'M': {'size': 10, 'exchange': Exchange.DCE},       # 豆粕
-    'Y': {'size': 10, 'exchange': Exchange.DCE},       # 豆油
-    'C': {'size': 10, 'exchange': Exchange.DCE},       # 玉米
-    'I': {'size': 100, 'exchange': Exchange.DCE},      # 铁矿石
-    'PP': {'size': 5, 'exchange': Exchange.DCE},       # 聚丙烯
+    'M': {'size': 10, 'exchange': Exchange.DCE, 'name': '豆粕'},
+    'Y': {'size': 10, 'exchange': Exchange.DCE, 'name': '豆油'},
+    'C': {'size': 10, 'exchange': Exchange.DCE, 'name': '玉米'},
+    'I': {'size': 100, 'exchange': Exchange.DCE, 'name': '铁矿'},
+    'PP': {'size': 5, 'exchange': Exchange.DCE, 'name': '聚丙烯'},
+    'V': {'size': 5, 'exchange': Exchange.DCE, 'name': 'PVC'},
+    'EB': {'size': 5, 'exchange': Exchange.DCE, 'name': '苯乙烯'},
+    'L': {'size': 5, 'exchange': Exchange.DCE, 'name': '塑料'},
+    'JD': {'size': 5, 'exchange': Exchange.DCE, 'name': '鸡蛋'},
+    'LH': {'size': 16, 'exchange': Exchange.DCE, 'name': '生猪'},
     
     # 郑商所
-    'SR': {'size': 10, 'exchange': Exchange.CZCE},     # 白糖
-    'MA': {'size': 10, 'exchange': Exchange.CZCE},     # 甲醇
-    'TA': {'size': 5, 'exchange': Exchange.CZCE},      # PTA
-    'AP': {'size': 10, 'exchange': Exchange.CZCE},     # 苹果
-    'CF': {'size': 5, 'exchange': Exchange.CZCE},      # 棉花
+    'SR': {'size': 10, 'exchange': Exchange.CZCE, 'name': '白糖'},
+    'MA': {'size': 10, 'exchange': Exchange.CZCE, 'name': '甲醇'},
+    'TA': {'size': 5, 'exchange': Exchange.CZCE, 'name': 'PTA'},
+    'SA': {'size': 20, 'exchange': Exchange.CZCE, 'name': '纯碱'},
+    'FG': {'size': 20, 'exchange': Exchange.CZCE, 'name': '玻璃'},
+    'UR': {'size': 20, 'exchange': Exchange.CZCE, 'name': '尿素'},
+    'RM': {'size': 10, 'exchange': Exchange.CZCE, 'name': '菜粕'},
+    'OI': {'size': 10, 'exchange': Exchange.CZCE, 'name': '菜油'},
+    'PX': {'size': 5, 'exchange': Exchange.CZCE, 'name': '对二甲苯'},
+    'SM': {'size': 50, 'exchange': Exchange.CZCE, 'name': '锰硅'},
+}
+
+# 合约列表
+CONTRACTS = ["RB2510", "MA2505", "SA2505", "RM2509", "FU2507", "FG2505", 
+            "V2505", "HC2510", "Y2509", "BU2506", "SP2505", "AL2505", 
+            "AO2505", "SH2505", "C2505", "EB2505", "LH2505", "PP2505", 
+            "M2509", "I2509", "TA2505", "PX2505", "L2505", "OI2505", 
+            "UR2505", "SR2505", "NI2505", "SM2505", "A2505", "ZN2505",
+            "B2505", "JD2505"]
+
+def get_contract_display_name(contract_code):
+    """获取合约的显示名称（带中文名）"""
+    product_code = ''.join(filter(str.isalpha, contract_code.upper()))
+    if product_code in CONTRACT_SPECS:
+        return f"{CONTRACT_SPECS[product_code]['name']}：{contract_code}"
+    return contract_code
+
+# 按交易所分类的合约（带中文名）
+EXCHANGE_CONTRACTS = {
+    "上期所": [get_contract_display_name(c) for c in ["RB2510", "HC2510", "BU2506", "SP2505", "AL2505", "AO2505", "FU2507", "ZN2505", "NI2505"]],
+    "大商所": [get_contract_display_name(c) for c in ["M2509", "Y2509", "C2505", "I2509", "PP2505", "V2505", "EB2505", "L2505", "JD2505", "LH2505"]],
+    "郑商所": [get_contract_display_name(c) for c in ["MA505", "TA505", "SA505", "RM505", "FG505", "UR505", "SR505", "SM505", "OI505", "PX505"]]
 }
 
 class TraderApi(CtpbeeApi):
@@ -78,7 +111,6 @@ class TraderApi(CtpbeeApi):
         """成交回报"""
         record = {
             'account': self.account_name,
-            'trade_id': trade.trade_id,
             'order_id': trade.order_id,
             'symbol': trade.symbol,
             'direction': "买入" if trade.direction == Direction.LONG else "卖出",
@@ -227,16 +259,35 @@ class AccountManager:
             return False, "交易实例不存在"
             
         try:
-            # 获取合约信息
-            product_code = ''.join(filter(str.isalpha, symbol.upper()))
+            # 从显示名称中提取实际合约代码
+            actual_symbol = symbol.split("：")[-1].strip() if "：" in symbol else symbol.strip()
+            print(f"处理合约代码: 原始={symbol}, 提取后={actual_symbol}")
+            
+            # 获取合约信息（只取字母部分作为品种代码）
+            product_code = ''.join(c for c in actual_symbol.upper() if c.isalpha())
+            print(f"提取品种代码: {product_code}")
+            
             if product_code not in CONTRACT_SPECS:
                 return False, f"未知合约品种: {product_code}"
                 
             contract_info = CONTRACT_SPECS[product_code]
             
+            # 处理合约代码
+            if contract_info['exchange'] == Exchange.CZCE:
+                # 郑商所合约去掉年份中的20
+                # if len(actual_symbol) > 6:
+                # actual_symbol = actual_symbol.upper()
+                # actual_symbol = actual_symbol.replace('2', '')
+                pass
+            else:
+                # 大商所合约转换为大写
+                actual_symbol = actual_symbol.lower()
+                
+            print(f"最终合约代码: {actual_symbol}")
+            
             # 构建订单请求
             req = OrderRequest(
-                symbol=symbol,
+                symbol=actual_symbol,  # 使用处理后的合约代码
                 exchange=contract_info['exchange'],
                 direction=Direction.LONG if direction == "买入" else Direction.SHORT,
                 offset=Offset.OPEN if offset == "开仓" else Offset.CLOSE,
@@ -246,10 +297,13 @@ class AccountManager:
                 gateway_name="ctp"
             )
             
+            print(f"发送订单 - {account_name}: 合约={actual_symbol}, 品种={product_code}, 交易所={contract_info['exchange']}, 方向={direction}, 开平={offset}, 价格={price}, 数量={volume}")
             # 发送订单
             order_id = app.send_order(req)
             return True, f"订单已发送，订单号: {order_id}"
         except Exception as e:
+            import traceback
+            print(f"下单失败详细信息: {traceback.format_exc()}")
             return False, f"下单失败: {str(e)}"
 
     def connect_all_accounts(self):
@@ -317,10 +371,13 @@ any_account_connected = any(account['connected'] for account in account_manager.
 # 下单表单
 if any_account_connected:
     st.subheader("下单信息")
+    
+    # 先选择交易所
+    exchange = st.selectbox("交易所", list(EXCHANGE_CONTRACTS.keys()))
+    
     col1, col2 = st.columns(2)
-
     with col1:
-        symbol = st.text_input("合约代码", "m2505")
+        symbol = st.selectbox("合约代码", EXCHANGE_CONTRACTS[exchange])
         direction = st.selectbox("方向", ["买入", "卖出"])
         offset = st.selectbox("开平", ["开仓", "平仓"])
 
